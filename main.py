@@ -1,77 +1,115 @@
 import matplotlib.pyplot as plt
 import networkx as nx
-from aima3.search import Problem, breadth_first_tree_search, greedy_best_first_graph_search, astar_search
+import heapq
+from collections import deque
 
-class WaterJugProblem(Problem):
-    def __init__(self, initial=(8, 0, 0), goal=(4, 4, 0), capacities=(8, 5, 3)):
-        super().__init__(initial, goal)
-        self.capacities = capacities
+# Configuração do problema
+capacities = (8, 5, 3)
+initial_state = (8, 0, 0)
+goal_state = (4, 4, 0)
 
-    def actions(self, state):
-        actions = []
-        for i in range(3):
-            for j in range(3):
-                if i != j and state[i] > 0 and state[j] < self.capacities[j]:
-                    actions.append((i, j))
-        return actions
+def actions(state):
+    acts = []
+    for i in range(3):
+        for j in range(3):
+            if i != j and state[i] > 0 and state[j] < capacities[j]:
+                acts.append((i, j))
+    return acts
 
-    def result(self, state, action):
-        state = list(state)
-        i, j = action
-        amount = min(state[i], self.capacities[j] - state[j])
-        state[i] -= amount
-        state[j] += amount
-        return tuple(state)
+def result(state, action):
+    state = list(state)
+    i, j = action
+    amount = min(state[i], capacities[j] - state[j])
+    state[i] -= amount
+    state[j] += amount
+    return tuple(state)
 
-    def goal_test(self, state):
-        return state[0] == 4 and state[1] == 4
+def goal_test(state):
+    return state == goal_state
 
-    def h(self, node):
+def heuristic(state):
+    return abs(state[0] != 4) + abs(state[1] != 4)
 
-        return abs(node.state[0] - 4) + abs(node.state[1] - 4)
+# BFS
+def breadth_first_search(initial_state):
+    frontier = deque([(initial_state, [initial_state])])
+    explored = set()
+    tree_edges = []
+    while frontier:
+        state, path = frontier.popleft()
+        if state in explored:
+            continue
+        explored.add(state)
+        if goal_test(state):
+            return path, tree_edges
+        for action in actions(state):
+            new_state = result(state, action)
+            if new_state not in explored:
+                frontier.append((new_state, path + [new_state]))
+                tree_edges.append((state, new_state))
+    return None, tree_edges
+
+# Gulosa
+def greedy_best_first(initial_state):
+    frontier = [(heuristic(initial_state), initial_state, [initial_state])]
+    explored = set()
+    tree_edges = []
+    while frontier:
+        _, state, path = heapq.heappop(frontier)
+        if state in explored:
+            continue
+        explored.add(state)
+        if goal_test(state):
+            return path, tree_edges
+        for action in actions(state):
+            new_state = result(state, action)
+            if new_state not in explored:
+                heapq.heappush(frontier, (heuristic(new_state), new_state, path + [new_state]))
+                tree_edges.append((state, new_state))
+    return None, tree_edges
+
+# A*
+def astar_search(initial_state):
+    frontier = [(heuristic(initial_state), 0, initial_state, [initial_state])]
+    explored = {}
+    tree_edges = []
+    while frontier:
+        f, g, state, path = heapq.heappop(frontier)
+        if state in explored and explored[state] <= g:
+            continue
+        explored[state] = g
+        if goal_test(state):
+            return path, tree_edges
+        for action in actions(state):
+            new_state = result(state, action)
+            new_g = g + 1
+            new_f = new_g + heuristic(new_state)
+            heapq.heappush(frontier, (new_f, new_g, new_state, path + [new_state]))
+            tree_edges.append((state, new_state))
+    return None, tree_edges
 
 
-problem = WaterJugProblem()
-
-# Resolver com BFS
-solution_bfs = breadth_first_tree_search(problem)
-
-# Resolver com Gulosa
-solution_greedy = greedy_best_first_graph_search(problem, problem.h)
-
-# Resolver com A*
-solution_astar = astar_search(problem, problem.h)
-
-
-def draw_solution(path, title, pos=None, ax=None):
+def draw_tree(ax, tree_edges, path, title):
     G = nx.DiGraph()
-    edges = []
-    nodes = []
+    for parent, child in tree_edges:
+        G.add_edge(parent, child)
 
-    for i in range(len(path) - 1):
-        edges.append((path[i].state, path[i+1].state))
-        nodes.append(path[i].state)
-    nodes.append(path[-1].state)
-
-    G.add_nodes_from(nodes)
-    G.add_edges_from(edges)
-
-    if pos is None:
-        pos = nx.spring_layout(G, seed=42)
-
-    nx.draw(G, pos, with_labels=True, node_size=2000, node_color="skyblue",
-            font_size=8, font_weight="bold", arrows=True, ax=ax)
-    nx.draw_networkx_edge_labels(
-        G, pos, edge_labels={(path[i].state, path[i+1].state): str(i+1) for i in range(len(path)-1)}, ax=ax
-    )
+    pos = nx.spring_layout(G, seed=42, k=1.5, iterations=100)
+    nx.draw(G, pos, with_labels=True, node_size=2500, node_color="skyblue",
+            font_size=10, font_weight="bold", arrows=True, ax=ax)
+    path_edges = list(zip(path, path[1:]))
+    nx.draw_networkx_nodes(G, pos, nodelist=path, node_color="orange", ax=ax)
+    nx.draw_networkx_edges(G, pos, edgelist=path_edges, edge_color="red", width=2, ax=ax)
     ax.set_title(title)
-    return pos
+    ax.axis("off")
 
+path_bfs, edges_bfs = breadth_first_search(initial_state)
+path_greedy, edges_greedy = greedy_best_first(initial_state)
+path_astar, edges_astar = astar_search(initial_state)
 
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-
-pos = draw_solution(solution_bfs.path(), "Busca em Largura (BFS)", ax=axes[0])
-draw_solution(solution_greedy.path(), "Busca Gulosa", pos=pos, ax=axes[1])
-draw_solution(solution_astar.path(), "Busca A*", pos=pos, ax=axes[2])
+fig, axes = plt.subplots(1, 3, figsize=(24, 10))
+draw_tree(axes[0], edges_bfs, path_bfs, "Busca em Largura (BFS)")
+draw_tree(axes[1], edges_greedy, path_greedy, "Busca Gulosa")
+draw_tree(axes[2], edges_astar, path_astar, "Busca A*")
 
 plt.show()

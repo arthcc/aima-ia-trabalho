@@ -1,1 +1,0 @@
-# aima-ia-trabalho
